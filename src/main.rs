@@ -13,12 +13,9 @@ import { platform } from "node:os"
 
 const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
 
-function notify(title: string, body: string, url?: string) {
-  const args = url
-    ? `--card-title "${title}" --card-url "${url}" "${body}"`
-    : `--card-title "${title}" "${body}"`
+function call(msg: string) {
   try {
-    execSync(`${BIN} ${args}`, { stdio: "ignore", timeout: 5000 })
+    execSync(`${BIN} "${msg.replace(/"/g, '\\"')}"`, { stdio: "ignore", timeout: 5000 })
   } catch {
   }
 }
@@ -26,14 +23,14 @@ function notify(title: string, body: string, url?: string) {
 export default (async () => {
   return {
     "permission.ask": async () => {
-      notify("opencode 需要授权", "agent 请求执行操作，请返回 opencode 确认")
+      call("需要授权: agent 请求权限，请查看 opencode 确认")
     },
     "chat.message": async (input) => {
       if (input?.role !== "assistant") return
       const text = (input?.content ?? "").trim()
       if (text.length < 5) return
       const preview = text.length > 150 ? text.slice(0, 150) + "..." : text
-      notify("任务完成", preview)
+      call(`任务完成: ${preview}`)
     },
   }
 }) satisfies Plugin
@@ -59,6 +56,10 @@ struct Cli {
     /// 卡片按钮跳转 URL（可选）
     #[arg(long = "card-url")]
     card_url: Option<String>,
+
+    /// 卡片按钮文字（默认: 查看详情）
+    #[arg(long = "card-button")]
+    card_button: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -80,7 +81,7 @@ async fn send_message(cli: &Cli, message: String) -> Result<()> {
     let client = lark::LarkClient::new(&config)?;
 
     if let Some(title) = &cli.card_title {
-        client.send_card(title, &message, cli.card_url.as_deref()).await
+        client.send_card(title, &message, cli.card_url.as_deref(), cli.card_button.as_deref()).await
     } else {
         match cli.msg_type.as_str() {
             "text" => client.send_text(&message).await,

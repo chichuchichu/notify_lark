@@ -82,7 +82,7 @@ impl LarkClient {
         self.post(&body).await
     }
 
-    pub async fn send_card(&self, title: &str, body_text: &str, button_url: Option<&str>) -> Result<()> {
+    pub async fn send_card(&self, title: &str, body_text: &str, button_url: Option<&str>, button_text: Option<&str>) -> Result<()> {
         let mut elements: Vec<Value> = vec![json!({
             "tag": "markdown",
             "content": body_text,
@@ -91,13 +91,14 @@ impl LarkClient {
         })];
 
         if let Some(url) = button_url {
+            let btn_label = button_text.unwrap_or("查看详情");
             elements.push(json!({
                 "tag": "button",
                 "text": {
                     "tag": "plain_text",
-                    "content": "打开 opencode"
+                    "content": btn_label
                 },
-                "type": "primary",
+                "type": "default",
                 "width": "default",
                 "size": "medium",
                 "behaviors": [{
