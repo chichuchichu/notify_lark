@@ -22,17 +22,19 @@ function notify(title: string, body: string) {
   } catch {}
 }
 
-export default (async () => {
+export default async () => {
   return {
-    "permission.asked": async (input: any) => {
-      const detail = input?.detail ?? input?.description ?? "agent 请求权限，请查看 opencode 确认"
-      notify("需要授权", String(detail).slice(0, 200))
-    },
-    "session.idle": async () => {
-      notify("任务完成", "agent 已完成响应，请查看 opencode")
+    event: async ({ event }: any) => {
+      if (event.type === "session.idle") {
+        notify("任务完成", "agent 已完成响应，请查看 opencode")
+      }
+      if (event.type === "permission.asked") {
+        const detail = event?.detail ?? event?.description ?? "agent 请求权限，请查看 opencode 确认"
+        notify("需要授权", String(detail).slice(0, 200))
+      }
     },
   }
-}) satisfies Plugin
+} satisfies Plugin
 "#;
 
 #[derive(Parser)]
