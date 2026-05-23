@@ -80,6 +80,8 @@ struct Cli {
 enum Commands {
     /// 安装 opencode 集成（自动创建 plugin 文件和配置）
     Setup,
+    /// 测试配置是否正常（发送一条测试消息到飞书）
+    Verify,
 }
 
 fn opencode_config_dir() -> PathBuf {
@@ -146,6 +148,21 @@ async fn run_setup() -> Result<()> {
     }
 
     println!("\n配置完成。重启 opencode 后生效。");
+    println!("验证安装: notify_lark verify");
+    Ok(())
+}
+
+async fn run_verify() -> Result<()> {
+    println!("🔍 检查配置...");
+    let config = config::Config::from_env()?;
+    println!("  LARK_WEBHOOK_URL ✓");
+
+    println!("📤 发送测试消息...");
+    let client = lark::LarkClient::new(&config)?;
+    client.send_text("notify_lark 安装配置验证通过 ✓").await?;
+    println!("  ✓ 消息已发送，请检查飞书群聊");
+
+    println!("\n所有验证通过。");
     Ok(())
 }
 
@@ -153,8 +170,10 @@ async fn run_setup() -> Result<()> {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    if let Some(Commands::Setup) = cli.command {
-        return run_setup().await;
+    match cli.command {
+        Some(Commands::Setup) => return run_setup().await,
+        Some(Commands::Verify) => return run_verify().await,
+        None => {}
     }
 
     let message = if let Some(msg) = &cli.message {

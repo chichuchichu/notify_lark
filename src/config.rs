@@ -11,8 +11,8 @@ const HELP: &str = r#"使用方法:
      export LARK_WEBHOOK_URL="https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx"
   3. 或创建 .env 文件:
      echo 'LARK_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx' > .env
-  4. 完成后验证:
-     notify_lark "配置测试"
+   4. 完成后验证:
+      notify_lark verify
   5. (推荐) opencode 用户集成自动通知:
      notify_lark setup
      然后重启 opencode，所有 agent 任务完成/中断/权限请求都会自动发飞书通知"#;
