@@ -3,13 +3,9 @@ import { platform } from "node:os"
 
 const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
 
-let lastNotifyTime = 0
 let lastMessageContent = ""
 
 function notify(title: string, body: string) {
-  const now = Date.now()
-  if (now - lastNotifyTime < 3000) return
-  lastNotifyTime = now
   try {
     spawn(BIN, ["--card-title", title, body.slice(0, 500)], {
       stdio: "ignore",
@@ -18,13 +14,19 @@ function notify(title: string, body: string) {
   } catch {}
 }
 
-function extractContent(msg: any): string {
-  if (!msg?.content) return ""
-  if (typeof msg.content === "string") return msg.content
-  if (Array.isArray(msg.content)) {
-    return msg.content.map((c: any) => c.text ?? "").join(" ").trim()
+function extractContent(src: any): string {
+  if (!src) return ""
+  if (typeof src.content === "string") return src.content
+  if (Array.isArray(src.content)) {
+    return src.content.map((c: any) =>
+      typeof c === "string" ? c : c?.text ?? c?.text?.value ?? ""
+    ).join(" ").trim()
   }
   return ""
+}
+
+function guessRole(src: any): string {
+  return src?.role ?? src?.message?.role ?? src?.data?.role ?? ""
 }
 
 export default {
@@ -32,9 +34,12 @@ export default {
   server: async () => {
     return {
       event: async ({ event }: any) => {
-        if (event.type === "message.updated" && event?.message?.role === "assistant") {
-          const text = extractContent(event.message)
-          if (text) lastMessageContent = text
+        if (event.type === "message.updated") {
+          const role = guessRole(event) || guessRole(event.message) || guessRole(event.data)
+          if (role === "assistant") {
+            const text = extractContent(event) || extractContent(event.message) || extractContent(event.data)
+            if (text) lastMessageContent = text
+          }
         }
         if (event.type === "session.idle") {
           const preview = lastMessageContent

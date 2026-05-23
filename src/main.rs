@@ -1,5 +1,6 @@
 use std::io::Read;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -12,13 +13,9 @@ import { platform } from "node:os"
 
 const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
 
-let lastNotifyTime = 0
 let lastMessageContent = ""
 
 function notify(title: string, body: string) {
-  const now = Date.now()
-  if (now - lastNotifyTime < 3000) return
-  lastNotifyTime = now
   try {
     spawn(BIN, ["--card-title", title, body.slice(0, 500)], {
       stdio: "ignore",
@@ -27,13 +24,19 @@ function notify(title: string, body: string) {
   } catch {}
 }
 
-function extractContent(msg: any): string {
-  if (!msg?.content) return ""
-  if (typeof msg.content === "string") return msg.content
-  if (Array.isArray(msg.content)) {
-    return msg.content.map((c: any) => c.text ?? "").join(" ").trim()
+function extractContent(src: any): string {
+  if (!src) return ""
+  if (typeof src.content === "string") return src.content
+  if (Array.isArray(src.content)) {
+    return src.content.map((c: any) =>
+      typeof c === "string" ? c : c?.text ?? c?.text?.value ?? ""
+    ).join(" ").trim()
   }
   return ""
+}
+
+function guessRole(src: any): string {
+  return src?.role ?? src?.message?.role ?? src?.data?.role ?? ""
 }
 
 export default {
@@ -41,9 +44,12 @@ export default {
   server: async () => {
     return {
       event: async ({ event }: any) => {
-        if (event.type === "message.updated" && event?.message?.role === "assistant") {
-          const text = extractContent(event.message)
-          if (text) lastMessageContent = text
+        if (event.type === "message.updated") {
+          const role = guessRole(event) || guessRole(event.message) || guessRole(event.data)
+          if (role === "assistant") {
+            const text = extractContent(event) || extractContent(event.message) || extractContent(event.data)
+            if (text) lastMessageContent = text
+          }
         }
         if (event.type === "session.idle") {
           const preview = lastMessageContent
@@ -106,7 +112,38 @@ fn opencode_config_dir() -> PathBuf {
     }
 }
 
+fn dedup_check(body: &str) -> bool {
+    let path = opencode_config_dir().join(".notify-lark-dedup.json");
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Ok(entry) = serde_json::from_str::<serde_json::Value>(&content) {
+            let last_time = entry.get("time").and_then(|v| v.as_u64()).unwrap_or(0);
+            let last_body = entry.get("body").and_then(|v| v.as_str()).unwrap_or("");
+            if now.saturating_sub(last_time) < 3 && last_body == body {
+                return true;
+            }
+        }
+    }
+
+    let entry = serde_json::json!({ "time": now, "body": body });
+    let _ = std::fs::write(&path, entry.to_string());
+    false
+}
+
 async fn send_message(cli: &Cli, message: String) -> Result<()> {
+    let dedup_key = if let Some(title) = &cli.card_title {
+        format!("[{}] {}", title, message)
+    } else {
+        message.clone()
+    };
+    if dedup_check(&dedup_key) {
+        return Ok(());
+    }
+
     let config = config::Config::from_env()?;
     let client = lark::LarkClient::new(&config)?;
 
@@ -238,6 +275,8 @@ async fn run_uninstall() -> Result<()> {
     if plugin_dir.exists() && plugin_dir.read_dir().map(|mut d| d.next().is_none()).unwrap_or(false) {
         std::fs::remove_dir(&plugin_dir).ok();
     }
+    let dedup = cfg_dir.join(".notify-lark-dedup.json");
+    remove_if_exists(&dedup);
 
     println!("\nnotify_lark 集成已从 opencode 移除。");
     println!("如需完全卸载，请执行:");
