@@ -9,42 +9,64 @@ mod lark;
 
 const PLUGIN_TS: &str = r#"import type { Plugin } from "@opencode-ai/plugin"
 import { spawnSync } from "node:child_process"
+import { writeFileSync, readFileSync, existsSync, statSync } from "node:fs"
 import { platform } from "node:os"
 
 const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
+const LOG = "C:\\Users\\Administrator\\.config\\opencode\\notify-lark-hook.log"
 const ENV = process.env.LARK_WEBHOOK_URL ? "ok" : "missing"
 
+function log(msg: string) {
+  try {
+    const MAX_BYTES = 50 * 1024
+    const p = LOG
+    if (existsSync(p) && statSync(p).size > MAX_BYTES) {
+      const lines = readFileSync(p, "utf-8").split("\n").slice(-100)
+      writeFileSync(p, lines.join("\n") + "\n")
+    }
+    writeFileSync(p, `${new Date().toISOString()} ${msg}\n`, { flag: "a" })
+  } catch {}
+}
+
+log("PLUGIN_LOADED: LARK_WEBHOOK_URL=" + ENV)
+
 function sendCard(title: string, body: string) {
+  log(`sendCard: title="${title}" body="${body.slice(0, 60)}"`)
   const result = spawnSync(BIN, ["--card-title", title, body.slice(0, 2000)], { timeout: 5000 })
   if (result.error) {
-    console.error(`[notify-lark] ${BIN} not found (PATH?); LARK_WEBHOOK_URL=${ENV}`)
+    const err = `[notify-lark] ${BIN} not found (ENOENT? PATH?); LARK_WEBHOOK_URL=${ENV}; ${result.error.message}`
+    log(err)
+    console.error(err)
   } else if (result.status !== 0) {
     const stderr = result.stderr?.toString().trim() || ""
-    console.error(`[notify-lark] exit ${result.status}${stderr ? ": " + stderr : ""}`)
+    const err = `[notify-lark] exit ${result.status}${stderr ? ": " + stderr : ""}`
+    log(err)
+    console.error(err)
+  } else {
+    log("sendCard OK")
   }
 }
 
-function extractText(content: any): string {
-  if (typeof content === "string") return content
-  if (Array.isArray(content)) return content.map((c: any) => c.text ?? c.content ?? "").join(" ")
-  return String(content ?? "")
-}
-
-function preview(text: string, max: number): string {
-  const s = text.replace(/\s+/g, " ").trim()
-  return s.length > max ? s.slice(0, max) + "..." : s
-}
-
 export default (async () => {
+  log("PLUGIN_INIT")
   return {
     "permission.ask": async (input: any) => {
+      log(`PERMISSION_ASK: input_keys=${Object.keys(input ?? {}).join(",")}`)
       const detail = input?.detail ?? input?.description ?? "agent 请求权限，请查看 opencode 确认"
-      sendCard("需要授权", preview(String(detail), 200))
+      sendCard("需要授权", String(detail).slice(0, 200))
     },
     "chat.message": async (input: any) => {
-      const text = extractText(input?.content ?? input?.message?.content)
-      if (!text || text.length < 3) return
-      sendCard("任务完成", preview(text, 500))
+      const hasRole = input?.role
+      const hasContent = typeof input?.content
+      const contentText = typeof input?.content === "string" ? input.content.slice(0, 80) : JSON.stringify(input?.content).slice(0, 80)
+      log(`CHAT_MESSAGE: role=${hasRole} content_type=${hasContent} content="${contentText}"`)
+      const text = typeof input?.content === "string"
+        ? input.content
+        : Array.isArray(input?.content)
+          ? input.content.map((c: any) => c.text ?? "").join(" ")
+          : input?.message?.content ?? ""
+      if (!text || text.trim().length < 3) { log("CHAT_MESSAGE: skipped (too short)"); return }
+      sendCard("任务完成", text.trim().slice(0, 500))
     },
   }
 }) satisfies Plugin
