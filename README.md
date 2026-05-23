@@ -14,18 +14,18 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 ### 一行安装
 
-| 平台 | 命令 |
-|---|---|
-| **macOS / Linux / Windows (WSL)** | `cargo install --git https://github.com/chichuchichu/notify_lark.git` |
-| **Windows (PowerShell)** | `cargo install --git https://github.com/chichuchichu/notify_lark.git` |
+macOS / Linux / Windows 通用：
 
-安装后二进制位于 `~/.cargo/bin/notify_lark`（Windows: `%USERPROFILE%\.cargo\bin\notify_lark.exe`），该目录通常在 PATH 中，无需额外配置。
+```bash
+cargo install --git https://github.com/chichuchichu/notify_lark.git
+```
+
+安装后二进制位于 `~/.cargo/bin/notify_lark`（Windows: `%USERPROFILE%\.cargo\bin\notify_lark.exe`），该目录通常在 PATH 中。
 
 ## 配置飞书 Webhook
 
-1. 打开飞书，进入目标群聊
-2. 群设置 → 群机器人 → 添加自定义机器人
-3. 复制 webhook 地址
+1. 飞书群设置 → 群机器人 → 添加自定义机器人
+2. 复制 webhook 地址，设为环境变量：
 
 ```bash
 # macOS / Linux / WSL
@@ -35,45 +35,51 @@ export LARK_WEBHOOK_URL="https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx"
 $env:LARK_WEBHOOK_URL = "https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx"
 ```
 
-建议设为**系统级环境变量**，或使用项目目录下的 `.env` 文件。
+建议设为**系统级环境变量**，或使用 `.env` 文件。
+
+## opencode 集成（一键安装 hook）
+
+```bash
+notify_lark setup
+```
+
+自动创建 opencode plugin 和配置文件，实现：
+- 任务完成 → 自动飞书通知
+- 需要权限/用户操作 → 自动飞书通知
+- 任何 agent 中断场景 → 自动飞书通知
+
+重启 opencode 后生效。其他 agent 框架请参考 [`agent-rules.md`](agent-rules.md)。
 
 ## 使用
 
 ```bash
 # 文本消息
-notify_lark "Agent 任务已完成：代码审查通过"
+notify_lark "Agent 任务已完成"
 
 # 管道输入
-echo "构建成功，12/12 测试通过" | notify_lark
+echo "构建成功" | notify_lark
 
 # 交互卡片
 notify_lark -t interactive '{"elements":[{"tag":"div","text":{"content":"详情..."}}]}'
+
+# 查看帮助
+notify_lark --help
 ```
-
-## Agent 集成
-
-将 [`agent-rules.md`](agent-rules.md) 中的规则加入你的 AI Agent 的系统提示词，agent 就会在任何需要通知用户的场景自动调用 `notify_lark`。
-
-规则覆盖场景：
-- 任务完成通知
-- 需要用户决策/确认
-- 进度汇报
-- 错误提醒
-- 请求额外信息
 
 ## 项目结构
 
 ```
 notify_lark/
-├── agent-rules.md        # AI Agent 通用集成规则
+├── agent-rules.md              # AI Agent 通用集成规则
 ├── .opencode/
+│   ├── plugin/
+│   │   └── notify-lark.ts      # opencode 自动通知插件
 │   └── skills/
-│       └── notify-lark/  # opencode Agent 技能
-│           └── SKILL.md
+│       └── notify-lark/        # opencode 技能
 ├── src/
-│   ├── main.rs           # CLI 入口
-│   ├── config.rs         # 配置读取
-│   └── lark.rs           # 飞书 API 客户端
+│   ├── main.rs                 # CLI 入口（含 setup 子命令）
+│   ├── config.rs               # 配置读取
+│   └── lark.rs                 # 飞书 API 客户端
 └── Cargo.toml
 ```
 
