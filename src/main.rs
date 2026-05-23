@@ -13,7 +13,8 @@ import { platform } from "node:os"
 
 const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
 
-let lastMessageContent = ""
+const textParts = new Map<string, string>()
+let currentMsgId = ""
 
 function notify(title: string, body: string) {
   try {
@@ -24,39 +25,29 @@ function notify(title: string, body: string) {
   } catch {}
 }
 
-function extractContent(src: any): string {
-  if (!src) return ""
-  if (typeof src.content === "string") return src.content
-  if (Array.isArray(src.content)) {
-    return src.content.map((c: any) =>
-      typeof c === "string" ? c : c?.text ?? c?.text?.value ?? ""
-    ).join(" ").trim()
-  }
-  return ""
-}
-
-function guessRole(src: any): string {
-  return src?.role ?? src?.message?.role ?? src?.data?.role ?? ""
-}
-
 export default {
   id: "notify-lark",
   server: async () => {
     return {
       event: async ({ event }: any) => {
         if (event.type === "message.updated") {
-          const role = guessRole(event) || guessRole(event.message) || guessRole(event.data)
-          if (role === "assistant") {
-            const text = extractContent(event) || extractContent(event.message) || extractContent(event.data)
-            if (text) lastMessageContent = text
+          const info = event?.properties?.info
+          if (info?.role === "assistant") {
+            currentMsgId = info.id
+            textParts.clear()
+          }
+        }
+        if (event.type === "message.part.updated") {
+          const part = event?.properties?.part
+          if (part?.type === "text" && part?.messageID === currentMsgId && part.text) {
+            textParts.set(part.id, part.text)
           }
         }
         if (event.type === "session.idle") {
-          const preview = lastMessageContent
-            ? lastMessageContent.trim().slice(0, 200)
-            : "agent 已完成响应，请查看 opencode"
+          const text = [...textParts.values()].join(" ").trim()
+          const preview = text ? text.slice(0, 200) : "agent 已完成响应，请查看 opencode"
           notify("任务完成", preview)
-          lastMessageContent = ""
+          textParts.clear()
         }
         if (event.type === "permission.asked") {
           const detail = event?.detail ?? event?.description ?? "agent 请求权限，请查看 opencode 确认"
