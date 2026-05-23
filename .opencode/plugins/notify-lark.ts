@@ -6,6 +6,7 @@ const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
 const textParts = new Map<string, string>()
 let currentMsgId = ""
 let lastNotifyTime = 0
+let sessionNotified = false
 
 function notify(title: string, body: string) {
   const now = Date.now()
@@ -29,6 +30,7 @@ export default {
           if (info?.role === "assistant" && info.id !== currentMsgId) {
             currentMsgId = info.id
             textParts.clear()
+            sessionNotified = false
           }
         }
         if (event.type === "message.part.updated") {
@@ -38,6 +40,8 @@ export default {
           }
         }
         if (event.type === "session.idle") {
+          if (sessionNotified) return
+          sessionNotified = true
           const text = [...textParts.values()].join(" ").trim()
           const preview = text ? text.slice(0, 200) : "agent 已完成响应，请查看 opencode"
           notify("任务完成", preview)

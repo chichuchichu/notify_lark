@@ -16,6 +16,7 @@ const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
 const textParts = new Map<string, string>()
 let currentMsgId = ""
 let lastNotifyTime = 0
+let sessionNotified = false
 
 function notify(title: string, body: string) {
   const now = Date.now()
@@ -39,6 +40,7 @@ export default {
           if (info?.role === "assistant" && info.id !== currentMsgId) {
             currentMsgId = info.id
             textParts.clear()
+            sessionNotified = false
           }
         }
         if (event.type === "message.part.updated") {
@@ -48,6 +50,8 @@ export default {
           }
         }
         if (event.type === "session.idle") {
+          if (sessionNotified) return
+          sessionNotified = true
           const text = [...textParts.values()].join(" ").trim()
           const preview = text ? text.slice(0, 200) : "agent 已完成响应，请查看 opencode"
           notify("任务完成", preview)
@@ -108,28 +112,61 @@ fn opencode_config_dir() -> PathBuf {
 }
 
 fn dedup_check(body: &str) -> bool {
-    let path = opencode_config_dir().join(".notify-lark-dedup.json");
+    let cfg_dir = opencode_config_dir();
+    let lock_path = cfg_dir.join(".notify-lark-dedup.lock");
+    let data_path = cfg_dir.join(".notify-lark-dedup.json");
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
 
-    if let Ok(content) = std::fs::read_to_string(&path) {
-        if let Ok(entry) = serde_json::from_str::<serde_json::Value>(&content) {
-            let last_time = entry.get("time").and_then(|v| v.as_u64()).unwrap_or(0);
-            let last_body = entry.get("body").and_then(|v| v.as_str()).unwrap_or("");
-            if now.saturating_sub(last_time) < 3 && last_body == body {
-                return true;
+    let deadline = now + 5;
+    while std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&lock_path)
+        .is_err()
+    {
+        if let Ok(meta) = std::fs::metadata(&lock_path) {
+            if let Ok(mtime) = meta.modified() {
+                let age = now.saturating_sub(
+                    mtime.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                );
+                if age > 5 {
+                    let _ = std::fs::remove_file(&lock_path);
+                    continue;
+                }
             }
         }
+        if SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs()
+            >= deadline
+        {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 
-    let entry = serde_json::json!({ "time": now, "body": body });
-    let tmp = path.with_extension(".tmp");
-    if std::fs::write(&tmp, entry.to_string()).is_ok() {
-        let _ = std::fs::rename(&tmp, &path);
-    }
-    false
+    let result = (|| -> bool {
+        if let Ok(content) = std::fs::read_to_string(&data_path) {
+            if let Ok(entry) = serde_json::from_str::<serde_json::Value>(&content) {
+                let last_time = entry.get("time").and_then(|v| v.as_u64()).unwrap_or(0);
+                let last_body = entry.get("body").and_then(|v| v.as_str()).unwrap_or("");
+                if now.saturating_sub(last_time) < 3 && last_body == body {
+                    return true;
+                }
+            }
+        }
+
+        let entry = serde_json::json!({ "time": now, "body": body });
+        let _ = std::fs::write(&data_path, entry.to_string());
+        false
+    })();
+
+    let _ = std::fs::remove_file(&lock_path);
+    result
 }
 
 async fn send_message(cli: &Cli, message: String) -> Result<()> {
