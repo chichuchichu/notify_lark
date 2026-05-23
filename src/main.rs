@@ -12,11 +12,15 @@ import { spawnSync } from "node:child_process"
 import { platform } from "node:os"
 
 const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
+const ENV = process.env.LARK_WEBHOOK_URL ? "ok" : "missing"
 
 function sendCard(title: string, body: string) {
-  try {
-    spawnSync(BIN, ["--card-title", title, body.slice(0, 2000)], { timeout: 5000, stdio: "ignore" })
-  } catch {
+  const result = spawnSync(BIN, ["--card-title", title, body.slice(0, 2000)], { timeout: 5000 })
+  if (result.error) {
+    console.error(`[notify-lark] ${BIN} not found (PATH?); LARK_WEBHOOK_URL=${ENV}`)
+  } else if (result.status !== 0) {
+    const stderr = result.stderr?.toString().trim() || ""
+    console.error(`[notify-lark] exit ${result.status}${stderr ? ": " + stderr : ""}`)
   }
 }
 
@@ -24,6 +28,11 @@ function extractText(content: any): string {
   if (typeof content === "string") return content
   if (Array.isArray(content)) return content.map((c: any) => c.text ?? c.content ?? "").join(" ")
   return String(content ?? "")
+}
+
+function preview(text: string, max: number): string {
+  const s = text.replace(/\s+/g, " ").trim()
+  return s.length > max ? s.slice(0, max) + "..." : s
 }
 
 export default (async () => {
@@ -39,11 +48,6 @@ export default (async () => {
     },
   }
 }) satisfies Plugin
-
-function preview(text: string, max: number): string {
-  const s = text.replace(/\s+/g, " ").trim()
-  return s.length > max ? s.slice(0, max) + "..." : s
-}
 "#;
 
 #[derive(Parser)]
