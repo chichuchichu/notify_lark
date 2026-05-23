@@ -55,6 +55,33 @@ impl LarkClient {
         self.send_interactive(card).await
     }
 
+    pub async fn send_post(&self, lang: &str, title: &str, content: Value) -> Result<()> {
+        let body = json!({
+            "msg_type": "post",
+            "content": {
+                "post": {
+                    lang: {
+                        "title": title,
+                        "content": content
+                    }
+                }
+            }
+        });
+        self.post(&body).await
+    }
+
+    pub async fn send_post_json(&self, post_json: &str) -> Result<()> {
+        let post_val: Value = serde_json::from_str(post_json)
+            .context("解析富文本 JSON 失败")?;
+        let body = json!({
+            "msg_type": "post",
+            "content": {
+                "post": post_val
+            }
+        });
+        self.post(&body).await
+    }
+
     pub async fn send_card(&self, title: &str, body_text: &str, button_url: Option<&str>) -> Result<()> {
         let mut elements: Vec<Value> = vec![json!({
             "tag": "markdown",

@@ -84,8 +84,9 @@ async fn send_message(cli: &Cli, message: String) -> Result<()> {
     } else {
         match cli.msg_type.as_str() {
             "text" => client.send_text(&message).await,
+            "post" => client.send_post_json(&message).await,
             "interactive" => client.send_interactive_json(&message).await,
-            other => anyhow::bail!("不支持的消息类型: {}，可选值: text, interactive", other),
+            other => anyhow::bail!("不支持的消息类型: {}，可选值: text, post, interactive", other),
         }
     }
 }
