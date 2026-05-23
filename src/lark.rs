@@ -10,6 +10,10 @@ pub struct LarkClient {
     webhook_url: String,
 }
 
+fn resolve(text: &str) -> String {
+    text.replace("\\n", "\n")
+}
+
 impl LarkClient {
     pub fn new(config: &Config) -> Result<Self> {
         let webhook_url = config.webhook_url.trim_end_matches('/').to_string();
@@ -36,7 +40,7 @@ impl LarkClient {
     pub async fn send_text(&self, text: &str) -> Result<()> {
         let body = json!({
             "msg_type": "text",
-            "content": { "text": text }
+            "content": { "text": resolve(text) }
         });
         self.post(&body).await
     }
@@ -83,9 +87,10 @@ impl LarkClient {
     }
 
     pub async fn send_card(&self, title: &str, body_text: &str, button_url: Option<&str>, button_text: Option<&str>) -> Result<()> {
+        let body = resolve(body_text);
         let mut elements: Vec<Value> = vec![json!({
             "tag": "markdown",
-            "content": body_text,
+            "content": body,
             "text_align": "left",
             "text_size": "normal_v2"
         })];
