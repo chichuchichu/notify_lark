@@ -15,30 +15,35 @@ const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
 
 function sendCard(title: string, body: string) {
   try {
-    spawnSync(BIN, ["--card-title", title, body], { timeout: 5000, stdio: "ignore" })
+    spawnSync(BIN, ["--card-title", title, body.slice(0, 2000)], { timeout: 5000, stdio: "ignore" })
   } catch {
   }
 }
+
+function extractText(content: any): string {
+  if (typeof content === "string") return content
+  if (Array.isArray(content)) return content.map((c: any) => c.text ?? c.content ?? "").join(" ")
+  return String(content ?? "")
+}
+
+export default (async () => {
+  return {
+    "permission.ask": async (input: any) => {
+      const detail = input?.detail ?? input?.description ?? "agent 请求权限，请查看 opencode 确认"
+      sendCard("需要授权", preview(String(detail), 200))
+    },
+    "chat.message": async (input: any) => {
+      const text = extractText(input?.content ?? input?.message?.content)
+      if (!text || text.length < 3) return
+      sendCard("任务完成", preview(text, 500))
+    },
+  }
+}) satisfies Plugin
 
 function preview(text: string, max: number): string {
   const s = text.replace(/\s+/g, " ").trim()
   return s.length > max ? s.slice(0, max) + "..." : s
 }
-
-export default (async () => {
-  return {
-    "permission.ask": async (input) => {
-      const detail = input?.detail ?? input?.description ?? "agent 请求权限，请查看 opencode 确认"
-      sendCard("需要授权", preview(String(detail), 200))
-    },
-    "chat.message": async (input) => {
-      if (input?.role !== "assistant") return
-      const text = (input?.content ?? "").trim()
-      if (text.length < 5) return
-      sendCard("任务完成", preview(text, 500))
-    },
-  }
-}) satisfies Plugin
 "#;
 
 #[derive(Parser)]
