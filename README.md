@@ -98,7 +98,7 @@ notify_lark setup    # 创建/更新 opencode plugin 及配置文件（幂等）
 notify_lark/
 ├── agent-rules.md              # AI Agent 通用集成规则（用于非 opencode 框架）
 ├── .opencode/
-│   ├── plugin/
+│   ├── plugins/
 │   │   └── notify-lark.ts      # opencode 自动通知插件
 │   └── skills/
 │       └── notify-lark/        # opencode 技能

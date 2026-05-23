@@ -8,65 +8,28 @@ mod config;
 mod lark;
 
 const PLUGIN_TS: &str = r#"import type { Plugin } from "@opencode-ai/plugin"
-import { spawnSync } from "node:child_process"
-import { writeFileSync, readFileSync, existsSync, statSync } from "node:fs"
+import { spawn } from "node:child_process"
 import { platform } from "node:os"
 
 const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
-const LOG = "C:\\Users\\Administrator\\.config\\opencode\\notify-lark-hook.log"
-const ENV = process.env.LARK_WEBHOOK_URL ? "ok" : "missing"
 
-function log(msg: string) {
+function notify(title: string, body: string) {
   try {
-    const MAX_BYTES = 50 * 1024
-    const p = LOG
-    if (existsSync(p) && statSync(p).size > MAX_BYTES) {
-      const lines = readFileSync(p, "utf-8").split("\n").slice(-100)
-      writeFileSync(p, lines.join("\n") + "\n")
-    }
-    writeFileSync(p, `${new Date().toISOString()} ${msg}\n`, { flag: "a" })
+    spawn(BIN, ["--card-title", title, body.slice(0, 500)], {
+      stdio: "ignore",
+      timeout: 5000,
+    }).on("error", () => {})
   } catch {}
 }
 
-log("PLUGIN_LOADED: LARK_WEBHOOK_URL=" + ENV)
-
-function sendCard(title: string, body: string) {
-  log(`sendCard: title="${title}" body="${body.slice(0, 60)}"`)
-  const result = spawnSync(BIN, ["--card-title", title, body.slice(0, 2000)], { timeout: 5000 })
-  if (result.error) {
-    const err = `[notify-lark] ${BIN} not found (ENOENT? PATH?); LARK_WEBHOOK_URL=${ENV}; ${result.error.message}`
-    log(err)
-    console.error(err)
-  } else if (result.status !== 0) {
-    const stderr = result.stderr?.toString().trim() || ""
-    const err = `[notify-lark] exit ${result.status}${stderr ? ": " + stderr : ""}`
-    log(err)
-    console.error(err)
-  } else {
-    log("sendCard OK")
-  }
-}
-
 export default (async () => {
-  log("PLUGIN_INIT")
   return {
-    "permission.ask": async (input: any) => {
-      log(`PERMISSION_ASK: input_keys=${Object.keys(input ?? {}).join(",")}`)
+    "permission.asked": async (input: any) => {
       const detail = input?.detail ?? input?.description ?? "agent 请求权限，请查看 opencode 确认"
-      sendCard("需要授权", String(detail).slice(0, 200))
+      notify("需要授权", String(detail).slice(0, 200))
     },
-    "chat.message": async (input: any) => {
-      const hasRole = input?.role
-      const hasContent = typeof input?.content
-      const contentText = typeof input?.content === "string" ? input.content.slice(0, 80) : JSON.stringify(input?.content).slice(0, 80)
-      log(`CHAT_MESSAGE: role=${hasRole} content_type=${hasContent} content="${contentText}"`)
-      const text = typeof input?.content === "string"
-        ? input.content
-        : Array.isArray(input?.content)
-          ? input.content.map((c: any) => c.text ?? "").join(" ")
-          : input?.message?.content ?? ""
-      if (!text || text.trim().length < 3) { log("CHAT_MESSAGE: skipped (too short)"); return }
-      sendCard("任务完成", text.trim().slice(0, 500))
+    "session.idle": async () => {
+      notify("任务完成", "agent 已完成响应，请查看 opencode")
     },
   }
 }) satisfies Plugin
@@ -134,14 +97,14 @@ async fn send_message(cli: &Cli, message: String) -> Result<()> {
 
 async fn run_setup() -> Result<()> {
     let cfg_dir = opencode_config_dir();
-    std::fs::create_dir_all(cfg_dir.join("plugin")).context("创建 opencode plugin 目录失败")?;
+    std::fs::create_dir_all(cfg_dir.join("plugins")).context("创建 opencode plugin 目录失败")?;
 
-    let plugin_path = cfg_dir.join("plugin").join("notify-lark.ts");
+    let plugin_path = cfg_dir.join("plugins").join("notify-lark.ts");
     std::fs::write(&plugin_path, PLUGIN_TS).context("写入 plugin 文件失败")?;
     println!("已创建 {}", plugin_path.display());
 
     let cfg_path = cfg_dir.join("opencode.jsonc");
-    let new_entry = r#""plugin": ["./plugin/notify-lark.ts"]"#;
+    let new_entry = r#""plugin": ["./plugins/notify-lark.ts"]"#;
 
     if cfg_path.exists() {
         let content = std::fs::read_to_string(&cfg_path).context("读取 opencode.jsonc 失败")?;
@@ -221,7 +184,7 @@ async fn run_uninstall() -> Result<()> {
     let cfg_dir = opencode_config_dir();
 
     // 1. remove plugin
-    let plugin = cfg_dir.join("plugin").join("notify-lark.ts");
+    let plugin = cfg_dir.join("plugins").join("notify-lark.ts");
     remove_if_exists(&plugin);
     println!("移除 plugin: {}", plugin.display());
 
@@ -237,14 +200,14 @@ async fn run_uninstall() -> Result<()> {
 
     // 4. clean opencode.jsonc entries
     let cfg_path = cfg_dir.join("opencode.jsonc");
-    clean_jsonc_entry(&cfg_path, "plugin", "./plugin/notify-lark.ts");
+    clean_jsonc_entry(&cfg_path, "plugin", "./plugins/notify-lark.ts");
     clean_jsonc_entry(&cfg_path, "instructions", "notify_lark.md");
     if cfg_path.exists() {
         println!("已清理 notify_lark 相关配置: {}", cfg_path.display());
     }
 
     // 5. remove empty plugin dir
-    let plugin_dir = cfg_dir.join("plugin");
+    let plugin_dir = cfg_dir.join("plugins");
     if plugin_dir.exists() && plugin_dir.read_dir().map(|mut d| d.next().is_none()).unwrap_or(false) {
         std::fs::remove_dir(&plugin_dir).ok();
     }
