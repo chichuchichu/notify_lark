@@ -59,6 +59,7 @@ impl LarkClient {
         self.send_interactive(card).await
     }
 
+    #[allow(dead_code)]
     pub async fn send_post(&self, lang: &str, title: &str, content: Value) -> Result<()> {
         let body = json!({
             "msg_type": "post",
