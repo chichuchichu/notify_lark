@@ -44,7 +44,9 @@ notify_lark --card-title "通知" "这是一条卡片消息"
 notify_lark --card-title "构建通过" --card-url "https://github.com" --card-button "查看仓库" "12/12 测试通过"
 ```
 
-> **Windows PowerShell 注意**：传递复杂 JSON 时双引号会被剥离，请使用 stdin 管道（`echo '...' | notify_lark -t type`）；Linux/macOS 可直接传参数。
+> **换行**：text 和 card 消息中可用 `\n` 表示换行（所有平台通用）
+>
+> **Windows PowerShell**：传递复杂 JSON 时双引号会被剥离，请用 stdin 管道（`echo '...' | notify_lark -t post`）；Linux/macOS 可直接传参数。
 
 ### 集成 opencode（自动钩子通知）
 
