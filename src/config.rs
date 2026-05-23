@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 
+#[derive(Debug)]
 pub struct Config {
     pub webhook_url: String,
 }
@@ -28,5 +29,34 @@ impl Config {
         }
 
         Ok(Config { webhook_url })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_env_with_valid_url() {
+        temp_env::with_var("LARK_WEBHOOK_URL", Some("https://open.feishu.cn/open-apis/bot/v2/hook/testkey"), || {
+            let cfg = Config::from_env().unwrap();
+            assert_eq!(cfg.webhook_url, "https://open.feishu.cn/open-apis/bot/v2/hook/testkey");
+        });
+    }
+
+    #[test]
+    fn test_from_env_missing() {
+        temp_env::with_var("LARK_WEBHOOK_URL", None::<&str>, || {
+            let err = Config::from_env().unwrap_err();
+            assert!(err.to_string().contains("LARK_WEBHOOK_URL"));
+        });
+    }
+
+    #[test]
+    fn test_from_env_empty() {
+        temp_env::with_var("LARK_WEBHOOK_URL", Some(""), || {
+            let err = Config::from_env().unwrap_err();
+            assert!(err.to_string().contains("不能为空"));
+        });
     }
 }
