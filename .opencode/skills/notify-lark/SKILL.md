@@ -16,6 +16,7 @@ description: Use when agent tasks are completed to send Lark/Feishu notification
 | 富文本 (post) | `echo '{"zh_cn":...}' \| notify_lark -t post` |
 | 自定义卡片 | `echo 'card JSON' \| notify_lark -t interactive` |
 | 换行 | text/card 中用 `\n` 表示换行 |
+| 验证配置 | `notify_lark verify` |
 
 ## 规则
 
