@@ -13,12 +13,12 @@ import { platform } from "node:os"
 
 const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
 
-function notify(msg: string) {
+function notify(title: string, body: string, url?: string) {
+  const args = url
+    ? `--card-title "${title}" --card-url "${url}" "${body}"`
+    : `--card-title "${title}" "${body}"`
   try {
-    execSync(`${BIN} "${msg.replace(/"/g, '\\"')}"`, {
-      stdio: "ignore",
-      timeout: 5000,
-    })
+    execSync(`${BIN} ${args}`, { stdio: "ignore", timeout: 5000 })
   } catch {
   }
 }
@@ -26,14 +26,14 @@ function notify(msg: string) {
 export default (async () => {
   return {
     "permission.ask": async () => {
-      notify("需要确认: agent 请求权限，请查看 opencode 操作")
+      notify("opencode 需要授权", "agent 请求执行操作，请返回 opencode 确认")
     },
     "chat.message": async (input) => {
       if (input?.role !== "assistant") return
       const text = (input?.content ?? "").trim()
       if (text.length < 5) return
       const preview = text.length > 150 ? text.slice(0, 150) + "..." : text
-      notify(`任务完成: ${preview}`)
+      notify("任务完成", preview)
     },
   }
 }) satisfies Plugin
@@ -51,6 +51,14 @@ struct Cli {
     /// 消息类型: text 或 interactive
     #[arg(short = 't', long = "type", default_value = "text")]
     msg_type: String,
+
+    /// 发送消息卡片（需要 --card-title）
+    #[arg(long = "card-title")]
+    card_title: Option<String>,
+
+    /// 卡片按钮跳转 URL（可选）
+    #[arg(long = "card-url")]
+    card_url: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -67,14 +75,18 @@ fn opencode_config_dir() -> PathBuf {
     }
 }
 
-async fn send_message(message: String, msg_type: String) -> Result<()> {
+async fn send_message(cli: &Cli, message: String) -> Result<()> {
     let config = config::Config::from_env()?;
     let client = lark::LarkClient::new(&config)?;
 
-    match msg_type.as_str() {
-        "text" => client.send_text(&message).await,
-        "interactive" => client.send_interactive(&message).await,
-        other => anyhow::bail!("不支持的消息类型: {}，可选值: text, interactive", other),
+    if let Some(title) = &cli.card_title {
+        client.send_card(title, &message, cli.card_url.as_deref()).await
+    } else {
+        match cli.msg_type.as_str() {
+            "text" => client.send_text(&message).await,
+            "interactive" => client.send_interactive_json(&message).await,
+            other => anyhow::bail!("不支持的消息类型: {}，可选值: text, interactive", other),
+        }
     }
 }
 
@@ -129,8 +141,8 @@ async fn main() -> Result<()> {
         return run_setup().await;
     }
 
-    let message = if let Some(msg) = cli.message {
-        msg
+    let message = if let Some(msg) = &cli.message {
+        msg.clone()
     } else {
         let mut input = String::new();
         std::io::stdin()
@@ -143,5 +155,5 @@ async fn main() -> Result<()> {
         anyhow::bail!("消息内容不能为空");
     }
 
-    send_message(message, cli.msg_type).await
+    send_message(&cli, message).await
 }

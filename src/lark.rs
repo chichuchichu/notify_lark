@@ -1,20 +1,9 @@
 use anyhow::{Context, Result};
-use serde::Serialize;
+use serde_json::{json, Value};
 
 use crate::config::Config;
 
 const LARK_WEBHOOK_BASE: &str = "https://open.feishu.cn/open-apis/bot/v2/hook";
-
-#[derive(Serialize)]
-struct TextContent {
-    text: String,
-}
-
-#[derive(Serialize)]
-struct LarkMessage {
-    msg_type: String,
-    content: TextContent,
-}
 
 pub struct LarkClient {
     client: reqwest::Client,
@@ -45,45 +34,89 @@ impl LarkClient {
     }
 
     pub async fn send_text(&self, text: &str) -> Result<()> {
-        let msg = LarkMessage {
-            msg_type: "text".to_string(),
-            content: TextContent {
-                text: text.to_string(),
-            },
-        };
-
-        self.post(&msg).await
+        let body = json!({
+            "msg_type": "text",
+            "content": { "text": text }
+        });
+        self.post(&body).await
     }
 
-    pub async fn send_interactive(&self, card_json: &str) -> Result<()> {
-        let msg = LarkMessage {
-            msg_type: "interactive".to_string(),
-            content: TextContent {
-                text: card_json.to_string(),
-            },
-        };
-
-        self.post(&msg).await
+    pub async fn send_interactive(&self, card: Value) -> Result<()> {
+        let body = json!({
+            "msg_type": "interactive",
+            "card": card
+        });
+        self.post(&body).await
     }
 
-    async fn post(&self, msg: &LarkMessage) -> Result<()> {
+    pub async fn send_interactive_json(&self, card_json: &str) -> Result<()> {
+        let card: Value = serde_json::from_str(card_json)
+            .context("解析交互卡片 JSON 失败")?;
+        self.send_interactive(card).await
+    }
+
+    pub async fn send_card(&self, title: &str, body_text: &str, button_url: Option<&str>) -> Result<()> {
+        let mut elements: Vec<Value> = vec![json!({
+            "tag": "markdown",
+            "content": body_text,
+            "text_align": "left",
+            "text_size": "normal_v2"
+        })];
+
+        if let Some(url) = button_url {
+            elements.push(json!({
+                "tag": "button",
+                "text": {
+                    "tag": "plain_text",
+                    "content": "打开 opencode"
+                },
+                "type": "primary",
+                "width": "default",
+                "size": "medium",
+                "behaviors": [{
+                    "type": "open_url",
+                    "default_url": url
+                }],
+                "margin": "8px 0px 0px 0px"
+            }));
+        }
+
+        let card = json!({
+            "schema": "2.0",
+            "config": { "update_multi": true },
+            "header": {
+                "title": { "tag": "plain_text", "content": title },
+                "template": "blue",
+                "padding": "12px 12px 12px 12px"
+            },
+            "body": {
+                "direction": "vertical",
+                "padding": "12px 12px 12px 12px",
+                "elements": elements
+            }
+        });
+
+        self.send_interactive(card).await
+    }
+
+    async fn post(&self, body: &Value) -> Result<()> {
         let resp = self
             .client
             .post(&self.webhook_url)
-            .json(msg)
+            .json(body)
             .send()
             .await
             .context("发送飞书消息请求失败")?;
 
         let status = resp.status();
-        let body = resp.text().await.context("读取飞书响应失败")?;
+        let resp_body = resp.text().await.context("读取飞书响应失败")?;
 
         if !status.is_success() {
-            anyhow::bail!("飞书 API 返回错误 ({}): {}", status.as_u16(), body);
+            anyhow::bail!("飞书 API 返回错误 ({}): {}", status.as_u16(), resp_body);
         }
 
-        let parsed: serde_json::Value =
-            serde_json::from_str(&body).context("解析飞书响应 JSON 失败")?;
+        let parsed: Value =
+            serde_json::from_str(&resp_body).context("解析飞书响应 JSON 失败")?;
 
         let code = parsed["code"].as_i64().unwrap_or(-1);
         if code != 0 {
