@@ -82,6 +82,8 @@ enum Commands {
     Setup,
     /// 测试配置是否正常（发送一条测试消息到飞书）
     Verify,
+    /// 卸载 notify_lark 及 opencode 集成（plugin、skill、rules）
+    Uninstall,
 }
 
 fn opencode_config_dir() -> PathBuf {
@@ -122,13 +124,8 @@ async fn run_setup() -> Result<()> {
     if cfg_path.exists() {
         let content = std::fs::read_to_string(&cfg_path).context("读取 opencode.jsonc 失败")?;
         if !content.contains("notify-lark") {
-            let updated = if content.trim().ends_with('}') {
-                let trimmed = content.trim_end();
-                let inner = &trimmed[..trimmed.len() - 1];
-                format!("{},\n  {}\n}}", inner, new_entry)
-            } else {
-                content
-            };
+            let body = content.trim().trim_end_matches('}').trim_end().trim_end_matches(',');
+            let updated = format!("{},\n  {}\n}}\n", body, new_entry);
             std::fs::write(&cfg_path, updated).context("更新 opencode.jsonc 失败")?;
             println!("已更新 {}", cfg_path.display());
         } else {
@@ -136,10 +133,8 @@ async fn run_setup() -> Result<()> {
         }
     } else {
         let cfg = format!(
-            r#"{{
-  "$schema": "https://opencode.ai/config.json",
-  {}
-}}
+            r#"{{"$schema":"https://opencode.ai/config.json",
+  {} }}
 "#,
             new_entry
         );
@@ -149,6 +144,7 @@ async fn run_setup() -> Result<()> {
 
     println!("\n配置完成。重启 opencode 后生效。");
     println!("验证安装: notify_lark verify");
+    println!("卸载:      notify_lark uninstall && cargo uninstall notify_lark");
     Ok(())
 }
 
@@ -166,6 +162,77 @@ async fn run_verify() -> Result<()> {
     Ok(())
 }
 
+fn remove_if_exists(path: &std::path::Path) {
+    if path.is_dir() {
+        std::fs::remove_dir_all(path).ok();
+    } else if path.exists() {
+        std::fs::remove_file(path).ok();
+    }
+}
+
+fn clean_jsonc_entry(cfg_path: &std::path::Path, key: &str, value_pat: &str) {
+    if !cfg_path.exists() { return; }
+    let content = std::fs::read_to_string(cfg_path).unwrap_or_default();
+    let mut lines: Vec<&str> = content.lines().collect();
+    // remove the exact line containing value_pat
+    lines.retain(|l| !l.contains(value_pat));
+    // if the array is now empty (just `[...]` or `"key": [...]`), remove surrounding lines
+    let mut cleaned = lines.join("\n");
+    // remove empty plugin / instructions arrays
+    let patterns = [
+        (format!(r#""{}": []"#, key), ""),
+        (format!(r#""{}": []"#, key), ""),
+        (format!(r#""{}": [  ]"#, key), ""),
+    ];
+    for (old, new) in &patterns {
+        cleaned = cleaned.replace(old.as_str(), new);
+    }
+    // remove trailing comma before the removed line
+    cleaned = cleaned.replace(",\n  }", "\n}");
+    cleaned = cleaned.replace(",\n}", "\n}");
+    if cleaned != content {
+        std::fs::write(cfg_path, cleaned).ok();
+    }
+}
+
+async fn run_uninstall() -> Result<()> {
+    let cfg_dir = opencode_config_dir();
+
+    // 1. remove plugin
+    let plugin = cfg_dir.join("plugin").join("notify-lark.ts");
+    remove_if_exists(&plugin);
+    println!("移除 plugin: {}", plugin.display());
+
+    // 2. remove skill
+    let skill = cfg_dir.join("skills").join("notify-lark");
+    remove_if_exists(&skill);
+    println!("移除 skill: {}", skill.display());
+
+    // 3. remove instructions
+    let instructions = cfg_dir.join("notify_lark.md");
+    remove_if_exists(&instructions);
+    println!("移除 rules: {}", instructions.display());
+
+    // 4. clean opencode.jsonc entries
+    let cfg_path = cfg_dir.join("opencode.jsonc");
+    clean_jsonc_entry(&cfg_path, "plugin", "./plugin/notify-lark.ts");
+    clean_jsonc_entry(&cfg_path, "instructions", "notify_lark.md");
+    if cfg_path.exists() {
+        println!("已清理 notify_lark 相关配置: {}", cfg_path.display());
+    }
+
+    // 5. remove empty plugin dir
+    let plugin_dir = cfg_dir.join("plugin");
+    if plugin_dir.exists() && plugin_dir.read_dir().map(|mut d| d.next().is_none()).unwrap_or(false) {
+        std::fs::remove_dir(&plugin_dir).ok();
+    }
+
+    println!("\nnotify_lark 集成已从 opencode 移除。");
+    println!("如需完全卸载，请执行:");
+    println!("  cargo uninstall notify_lark");
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -173,6 +240,7 @@ async fn main() -> Result<()> {
     match cli.command {
         Some(Commands::Setup) => return run_setup().await,
         Some(Commands::Verify) => return run_verify().await,
+        Some(Commands::Uninstall) => return run_uninstall().await,
         None => {}
     }
 
