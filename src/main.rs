@@ -15,8 +15,12 @@ const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
 
 const textParts = new Map<string, string>()
 let currentMsgId = ""
+let lastNotifyTime = 0
 
 function notify(title: string, body: string) {
+  const now = Date.now()
+  if (now - lastNotifyTime < 3000) return
+  lastNotifyTime = now
   try {
     spawn(BIN, ["--card-title", title, body.slice(0, 500)], {
       stdio: "ignore",
@@ -121,7 +125,10 @@ fn dedup_check(body: &str) -> bool {
     }
 
     let entry = serde_json::json!({ "time": now, "body": body });
-    let _ = std::fs::write(&path, entry.to_string());
+    let tmp = path.with_extension(".tmp");
+    if std::fs::write(&tmp, entry.to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
     false
 }
 

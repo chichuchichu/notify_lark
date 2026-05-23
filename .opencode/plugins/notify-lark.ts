@@ -5,8 +5,12 @@ const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
 
 const textParts = new Map<string, string>()
 let currentMsgId = ""
+let lastNotifyTime = 0
 
 function notify(title: string, body: string) {
+  const now = Date.now()
+  if (now - lastNotifyTime < 3000) return
+  lastNotifyTime = now
   try {
     spawn(BIN, ["--card-title", title, body.slice(0, 500)], {
       stdio: "ignore",
