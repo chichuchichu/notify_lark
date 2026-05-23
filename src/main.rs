@@ -8,29 +8,34 @@ mod config;
 mod lark;
 
 const PLUGIN_TS: &str = r#"import type { Plugin } from "@opencode-ai/plugin"
-import { execSync } from "node:child_process"
+import { spawnSync } from "node:child_process"
 import { platform } from "node:os"
 
 const BIN = platform() === "win32" ? "notify_lark.exe" : "notify_lark"
 
-function call(msg: string) {
+function sendCard(title: string, body: string) {
   try {
-    execSync(`${BIN} "${msg.replace(/"/g, '\\"')}"`, { stdio: "ignore", timeout: 5000 })
+    spawnSync(BIN, ["--card-title", title, body], { timeout: 5000, stdio: "ignore" })
   } catch {
   }
 }
 
+function preview(text: string, max: number): string {
+  const s = text.replace(/\s+/g, " ").trim()
+  return s.length > max ? s.slice(0, max) + "..." : s
+}
+
 export default (async () => {
   return {
-    "permission.ask": async () => {
-      call("需要授权: agent 请求权限，请查看 opencode 确认")
+    "permission.ask": async (input) => {
+      const detail = input?.detail ?? input?.description ?? "agent 请求权限，请查看 opencode 确认"
+      sendCard("需要授权", preview(String(detail), 200))
     },
     "chat.message": async (input) => {
       if (input?.role !== "assistant") return
       const text = (input?.content ?? "").trim()
       if (text.length < 5) return
-      const preview = text.length > 150 ? text.slice(0, 150) + "..." : text
-      call(`任务完成: ${preview}`)
+      sendCard("任务完成", preview(text, 500))
     },
   }
 }) satisfies Plugin
