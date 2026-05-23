@@ -22,7 +22,7 @@ export default {
       event: async ({ event }: any) => {
         if (event.type === "message.updated") {
           const info = event?.properties?.info
-          if (info?.role === "assistant") {
+          if (info?.role === "assistant" && info.id !== currentMsgId) {
             currentMsgId = info.id
             textParts.clear()
           }
